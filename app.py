@@ -10,9 +10,16 @@ from seed import seed
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "officehours-dev-secret")
-app.config["SESSION_COOKIE_HTTPONLY"] = False
-app.config["SESSION_COOKIE_SAMESITE"] = None
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_NAME"] = "hold_flash"
+
+# Short-lived, single-use device-handoff codes (minutes, not the 14-day session).
+HANDOFF_TTL_MINUTES = 10
+
+
+def _is_secure_request():
+    return request.is_secure or request.headers.get("X-Forwarded-Proto", "") == "https"
 
 
 def current_user():
@@ -34,7 +41,10 @@ def login_required(fn):
 def load_user():
     init_db()
     seed()
-    token = request.args.get("sid") or request.cookies.get("hold_session")
+    # Authenticate only from the session cookie. The session token is never read
+    # from the query string: URLs leak via history, proxy/server logs, and the
+    # Referer header, so a token there would be a durable account credential.
+    token = request.cookies.get("hold_session")
     g.user = None
     g.session_token = None
     if not token:
@@ -60,8 +70,9 @@ def persist_session_cookie(response):
         response.set_cookie(
             "hold_session",
             g.session_token,
-            httponly=False,
-            samesite=None,
+            httponly=True,
+            samesite="Lax",
+            secure=_is_secure_request(),
             path="/",
             max_age=60 * 60 * 24 * 14,
         )
@@ -80,6 +91,24 @@ def create_session(user_id):
     conn.commit()
     conn.close()
     return token
+
+
+def create_handoff_code(user_id):
+    code = secrets.token_urlsafe(24)
+    conn = get_db()
+    # Opportunistically clear expired/used codes so the table stays small.
+    conn.execute(
+        "DELETE FROM handoff_codes WHERE used_at IS NOT NULL "
+        "OR created_at < datetime('now', ?)",
+        (f"-{HANDOFF_TTL_MINUTES} minutes",),
+    )
+    conn.execute(
+        "INSERT INTO handoff_codes (code, user_id) VALUES (?, ?)",
+        (code, user_id),
+    )
+    conn.commit()
+    conn.close()
+    return code
 
 
 @app.get("/health")
@@ -260,7 +289,31 @@ def mine():
         (current_user()["id"],),
     ).fetchall()
     conn.close()
-    return render_template("mine.html", bookings=bookings, sid=g.session_token)
+    handoff_code = create_handoff_code(current_user()["id"])
+    return render_template("mine.html", bookings=bookings, handoff_code=handoff_code)
+
+
+@app.get("/handoff/<code>")
+def handoff(code):
+    conn = get_db()
+    row = conn.execute(
+        "SELECT * FROM handoff_codes WHERE code = ? AND used_at IS NULL "
+        "AND created_at >= datetime('now', ?)",
+        (code, f"-{HANDOFF_TTL_MINUTES} minutes"),
+    ).fetchone()
+    if not row:
+        conn.close()
+        flash("That device link has expired or was already used. Open My bookings to get a fresh one.")
+        return redirect(url_for("login"))
+    # Burn the code before minting a session so it can only ever be redeemed once.
+    conn.execute(
+        "UPDATE handoff_codes SET used_at = datetime('now') WHERE code = ?", (code,)
+    )
+    conn.commit()
+    conn.close()
+    g.session_token = create_session(row["user_id"])
+    flash("Signed in on this browser.")
+    return redirect(url_for("mine"))
 
 
 @app.get("/bookings/<int:booking_id>")

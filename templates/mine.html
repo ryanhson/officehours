@@ -20,7 +20,9 @@
   {% endif %}
   <p class="help">
     Device handoff:
-    <a href="{{ url_for('mine', sid=sid) }}">open my bookings on this browser</a>
+    <a href="{{ url_for('handoff', code=handoff_code, _external=True) }}">open my bookings on another browser</a>
+    <br>
+    <small>This link works once and expires in {{ 10 }} minutes. Reload this page for a new one.</small>
   </p>
 </section>
 {% endblock %}
