@@ -1,10 +1,3 @@
-# Hold (OfficeHours) security review
-
-Every claim below (data flow, PoC, and fix) was verified against a live local
-instance (`python app.py`, Python 3.13.7, freshly seeded
-`data/officehours.db`) on 2026-10-03. Replace the `[hosted URL]` / commit-hash
-placeholders in §6 once you deploy the patched app for submission.
-
 ## 1. Architecture sketch
 
 ```
@@ -245,16 +238,23 @@ that the link is now a disposable code instead of a permanent credential.
       lea's `/bookings/1` returns `403`.
 - [x] **Cookie flags:** `Set-Cookie: hold_session=…; HttpOnly; Path=/;
       SameSite=Lax` (and `Secure` over HTTPS on the hosted instance).
-- [ ] Deploy the patched app to Fly.io (Dockerfile deploy via remote builder,
+- [x] Deployed the patched app to Fly.io (Dockerfile deploy via remote builder,
       persistent volume `officehours_data` mounted at `/app/data`, real random
-      `SECRET_KEY` set via `flyctl secrets set`) and re-run the checks against
-      the hosted URL — fill in §6.
+      `SECRET_KEY` set via `flyctl secrets set`) and re-ran every check above
+      against the hosted URL on 2026-10-04 (~14:02 UTC):
+      `GET /health` → `{"ok":true}`; plain HTTP `301`-redirects to HTTPS; the
+      session cookie is served `Secure; HttpOnly; SameSite=Lax`; replaying a
+      captured token as `GET /me?sid=<token>` returns `302 → /login`; the
+      handoff link carries a `/handoff/<code>` (no 48-hex token in the page), is
+      redeemable exactly once (fresh client lands on "My bookings", reuse →
+      `302 /login`); and a normal `book` as `nico@campus.edu` succeeds
+      (`302 /me`). Test booking/sessions were cleaned up afterward.
 
 ## 5. Submission fields
 
-- **Hosted URL:** `[hosted URL]` (Fly.io, region iad)
-- **Date/time PoC verified against the hosted instance:** `[fill after deploy]`
-- **Commit hash of the patch:** `[fill after commit]` (repo: https://github.com/ryanhson/officehours)
+- **Hosted URL:** `https://officehours-ryanhenderson.fly.dev/` (Fly.io, region iad)
+- **Date/time PoC verified against the hosted instance:** 2026-10-04 (~14:02 UTC), immediately after deploy
+- **Commit hash of the patch:** `617e70c` (repo: https://github.com/ryanhson/officehours)
 
 ### Optional hardening (beyond the required fix)
 
