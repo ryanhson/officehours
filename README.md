@@ -58,14 +58,3 @@ seed.py                First-run demo data
 templates/             Jinja pages
 static/css/style.css
 ```
-
-## Assignment notes
-
-Host this somewhere your classmates and instructor can reach. Walk the running app until you can explain:
-
-- how a login becomes a cookie the browser sends back
-- the difference between the public board and a booking detail
-- which actions change server state (book, cancel, transfer, logout)
-- what the device-handoff link on My bookings is doing
-
-Then look for a security defect in the running system, document how to trigger it, and patch it without breaking normal booking. Submit the hosted URL, a short architecture sketch, the writeup, and the patched repo.
